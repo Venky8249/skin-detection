@@ -1,6 +1,8 @@
 streamlit
-tensorflow-cpu
 keras
 pillow
 numpy
-keras
+tensorflow==2.16.1
+keras==3.3.3
+st-theme
+streamlit
