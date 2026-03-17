@@ -1,7 +1,7 @@
 import os
 import sys
 
-# --- FIX 1: Force Legacy Keras & Redirect Imports ---
+# 1. CRITICAL: Force Legacy Keras and fix module paths before other imports
 os.environ["TF_USE_LEGACY_KERAS"] = "1"
 try:
     import tensorflow.keras as keras
@@ -12,58 +12,66 @@ except ImportError:
 import streamlit as st
 import numpy as np
 import pickle
-from PIL import Image # Much lighter than tensorflow.keras.preprocessing
+from PIL import Image
 
-# --- FIX 2: Check for LFS Pointer Errors ---
+# --- Page Config ---
+st.set_page_config(page_title="MedVision: Skin Cancer Detection", layout="centered")
+
+# --- Model Loading ---
 @st.cache_resource
-def load_my_model():
+def load_skin_model():
     model_path = 'trained_model.pkl'
-    # If the file is tiny, it's just a Git LFS pointer text file
-    if os.path.getsize(model_path) < 1000:
-        st.error("Error: 'trained_model.pkl' is a Git LFS pointer. Please push the actual file data.")
+    
+    # Check if file is just a Git LFS pointer (common cause of 'v' error)
+    if not os.path.exists(model_path) or os.path.getsize(model_path) < 1000:
+        st.error("Error: Model file is missing or a Git LFS pointer. Please push actual LFS data.")
         st.stop()
         
-    with open(model_path, 'rb') as file:
-        model = pickle.load(file)
-    return model
+    try:
+        with open(model_path, 'rb') as f:
+            return pickle.load(f)
+    except Exception as e:
+        st.error(f"Unpickling Error: {e}")
+        st.stop()
 
-# Initialize model
-try:
-    model = load_my_model()
-except Exception as e:
-    st.error(f"Failed to load the model: {e}")
-    st.stop()
+model = load_skin_model()
 
-def predict_skin_cancer(uploaded_image, model):
-    # Preprocessing with PIL instead of Keras
-    img = Image.open(uploaded_image).convert('RGB').resize((224, 224))
+# --- Prediction Logic ---
+def predict(uploaded_file, model):
+    # Preprocessing: Match your training (224x224, normalized)
+    img = Image.open(uploaded_file).convert('RGB').resize((224, 224))
     img_array = np.array(img).astype('float32') / 255.0
-    img_array = np.expand_dims(img_array, axis=0)
+    img_array = np.expand_dims(img_array, axis=0) # Add batch dimension
 
-    # Prediction
     prediction = model.predict(img_array)
     
-    # Handle both single value and array outputs
+    # Logic: > 0.5 is Malignant, <= 0.5 is Benign
     prob = prediction[0][0] if hasattr(prediction[0], "__len__") else prediction[0]
-    class_label = "Malignant" if prob > 0.5 else "Benign"
+    label = "Malignant" if prob > 0.5 else "Benign"
+    confidence = prob if prob > 0.5 else (1 - prob)
     
-    return class_label
+    return label, confidence * 100
 
-# --- Streamlit UI ---
-st.title("🩺 Skin Cancer Detection")
-st.write("Upload a lesion image to analyze.")
+# --- UI Layout ---
+st.title("🩺 MedVision Skin Detection")
+st.write("Upload a lesion image for automated AI analysis.")
 
-uploaded_file = st.file_uploader("Upload lesion image", type=["jpg", "png", "jpeg"])
+uploaded_image = st.file_uploader("Upload Image (JPG/PNG)", type=["jpg", "jpeg", "png"])
 
-if uploaded_file:
-    with st.spinner("Analyzing..."):
-        label = predict_skin_cancer(uploaded_file, model)
-    
-    # Center the smaller image
+if uploaded_image:
+    # Display image in a smaller centered column
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.image(uploaded_file, width=300, caption="Uploaded Image")
+        st.image(uploaded_image, width=300, caption="Uploaded Lesion")
+        
+        with st.spinner("Analyzing..."):
+            label, score = predict(uploaded_image, model)
+            
         if label == "Malignant":
-            st.error(f"Prediction: **{label}**")
+            st.error(f"**Prediction: {label}**")
         else:
-            st.success(f"Prediction: **{label}**")
+            st.success(f"**Prediction: {label}**")
+            
+        st.info(f"**Confidence:** {score:.2f}%")
+
+st.caption("Developed by Venkatesh Gummadidala | Educational Project")
