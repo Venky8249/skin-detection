@@ -1,4 +1,5 @@
 streamlit
+tensorflow-cpu
+keras
+pillow
 numpy
-Pillow
-scikit-learn  # Add this if your pkl was made with sklearn
